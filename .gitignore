@@ -16,6 +16,7 @@ qrcode/*
 # 任务计划导出（含本机账号名）
 wjx_task*.xml
 wjx_url.txt
+fieldmap.json
 url_*.txt
 
 # 编辑器
