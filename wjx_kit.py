@@ -530,7 +530,7 @@ def render_report(result, config, url, mode, ts=None,
         a("  ⛔ 未提交。原因见下方清单。")
     elif mode.startswith("--dry-run"):
         a("  ✅ 检查通过，%d 项可自动填写。未提交（检查模式）。" % len(result.filled))
-        a("     下一步：双击「2_start_signup.bat」正式提交。")
+        a("     下一步：双击「submit.bat」正式提交。")
     else:
         a("  ✅ 已提交，%d 项已填写。" % len(result.filled))
     a("")
@@ -602,11 +602,11 @@ def render_report(result, config, url, mode, ts=None,
 
     a(BAR)
     if result.ok and mode.startswith("--dry-run"):
-        a(" 一句话：检查通过，双击「2_start_signup.bat」提交。")
+        a(" 一句话：检查通过，双击「submit.bat」提交。")
     elif result.ok:
         a(" 一句话：已提交，截图见logs 目录。")
     else:
-        a(" 一句话：改完 wjx_config.json 后，重跑「1_检查问卷.bat」。")
+        a(" 一句话：改完 wjx_config.json 后，重跑「check.bat」。")
     a(BAR)
     return "\n".join(L)
 
