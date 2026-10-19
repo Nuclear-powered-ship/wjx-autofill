@@ -90,7 +90,11 @@ def ensure_venv(base_python):
 
 
 def pip_install(args):
-    return run([VPY, "-m", "pip", "install", "--disable-pip-version-check"] + args)
+    # 国内网络直连 pypi 经常龟速，先走镜像；镜像不通再回退官方源。
+    # --timeout/--retries 让它尽快失败，别让用户干等十几分钟。
+    base = [VPY, "-m", "pip", "install", "--disable-pip-version-check",
+            "--timeout", "20", "--retries", "2"]
+    return run(base + ["-i", MIRROR] + args)
 
 
 def install_deps():
@@ -100,8 +104,10 @@ def install_deps():
         return False
     rc = pip_install(["-r", REQ])
     if rc != 0:
-        say("  官方源失败，改用清华镜像重试…")
-        rc = pip_install(["-i", MIRROR, "-r", REQ])
+        say("  镜像失败，回退官方源重试…")
+        rc = run([VPY, "-m", "pip", "install",
+                  "--disable-pip-version-check",
+                  "--timeout", "20", "--retries", "2", "-r", REQ])
     if rc != 0:
         say("  依赖安装失败。常见原因：没联网 / 公司代理 / 杀软拦截。")
         return False
