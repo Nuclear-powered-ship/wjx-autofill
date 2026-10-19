@@ -97,24 +97,6 @@ flowchart TD
   K --> L
 ```
 
-## 网络受限怎么办
-
-首次装依赖要下 `playwright`(38.7MB) + `opencv`(40MB)，**网速慢时 10~15 分钟是正常的**。
-`setup_env.py` 会按下面的顺序自动试源，一个失败立刻换下一个：
-
-```
-阿里云 → 清华 → 官方 PyPI
-```
-
-| 情况 | 处理 |
-|---|---|
-| 想指定源 | `python setup_env.py --index https://mirrors.aliyun.com/pypi/simple` |
-| 公司/学校代理 | 先设 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量再跑 |
-| 全都不通 | 手动下载 3 个 wheel，然后 `pip install 文件1 文件2 文件3` |
-| 卡在某个源不动 | Ctrl+C 后加 `--index` 指定另一个源 |
-
-注：清华镜像对部分机器会返回 403（`from versions: none`），这时换阿里云即可。
-
 ## 常见问题
 
 | 问题 | 处理 |

@@ -1,0 +1,25 @@
+# 个人配置：绝对不能提交（里面有学号手机号）
+wjx_config.json
+
+# 环境
+.venv/
+__pycache__/
+*.pyc
+
+# 运行产物
+logs/
+!logs/.gitkeep
+profile_*/
+qrcode/*
+!qrcode/.gitkeep
+
+# 任务计划导出（含本机账号名）
+wjx_task*.xml
+wjx_url.txt
+url_*.txt
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
