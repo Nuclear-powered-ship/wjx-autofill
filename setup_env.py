@@ -18,7 +18,12 @@ VENV = os.path.join(BASE, ".venv")
 VPY = os.path.join(VENV, "Scripts", "python.exe")
 REQ = os.path.join(BASE, "requirements.txt")
 
-MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+# 按实测可用性排序：阿里云 > 清华 > 官方（详见 install_deps 注释）
+INDEXES = [
+    "https://mirrors.aliyun.com/pypi/simple",
+    "https://pypi.tuna.tsinghua.edu.cn/simple",
+    None,                     # None = pip 默认（官方 PyPI）
+]
 EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -89,35 +94,62 @@ def ensure_venv(base_python):
     return True
 
 
-def pip_install(args):
-    # 国内网络直连 pypi 经常龟速，先走镜像；镜像不通再回退官方源。
-    # --timeout/--retries 让它尽快失败，别让用户干等十几分钟。
+def pip_install(args, index=None):
+    """装依赖。index 为 None 时走 pip 默认源（官方 PyPI）。
+
+    --timeout/--retries 调小：源不通就尽快失败换下一个，别让人干等十几分钟。
+    """
     base = [VPY, "-m", "pip", "install", "--disable-pip-version-check",
             "--timeout", "20", "--retries", "2"]
-    return run(base + ["-i", MIRROR] + args)
+    if index:
+        base += ["-i", index]
+    return run(base + args)
 
 
-def install_deps():
+def install_deps(index_override=None):
+    """按 阿里云 → 清华 → 官方 的顺序试。
+
+    为什么是这个顺序（2026-10-20 实测）：
+      - 清华镜像对 pip 的请求返回 403（curl/urllib 却 200），pip 只能报
+        「from versions: none」，白等半天；
+      - 阿里云镜像对 pip 正常，能秒出索引；
+      - 官方源能通但 CDN 极慢（playwright 38.7MB 下到 11.5MB 就断流）。
+    """
     say("[2/4] 安装依赖（首次约 2~6 分钟，取决于网速）")
     if not os.path.isfile(REQ):
         say("  找不到 requirements.txt")
         return False
-    rc = pip_install(["-r", REQ])
-    if rc != 0:
-        say("  镜像失败，回退官方源重试…")
-        rc = run([VPY, "-m", "pip", "install",
-                  "--disable-pip-version-check",
-                  "--timeout", "20", "--retries", "2", "-r", REQ])
-    if rc != 0:
-        say("  依赖安装失败。常见原因：没联网 / 公司代理 / 杀软拦截。")
-        return False
-    return True
+
+    if index_override:
+        sources = [index_override]
+        say("  使用指定源：%s" % index_override)
+    else:
+        sources = list(INDEXES)
+
+    for i, src in enumerate(sources, 1):
+        say("  [%d/%d] 尝试源：%s" % (i, len(sources), src))
+        if pip_install(["-r", REQ], src) == 0:
+            rc = run([VPY, "-m", "pip", "check"])
+            if rc != 0:
+                say("  依赖已装但 pip check 报冲突，继续（多半不影响）")
+            return True
+        say("  该源失败，换下一个…")
+
+    say("")
+    say("依赖安装失败。排查顺序：")
+    say("  1) 是否联网；公司/学校代理需先设 HTTP_PROXY/HTTPS_PROXY")
+    say("  2) 换源：python setup_env.py --index https://mirrors.aliyun.com/pypi/simple")
+    say("  3) 手动装：%s -m pip install -r requirements.txt -i <可用源>" % VPY)
+    return False
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只自检")
     ap.add_argument("--python", help="用哪个解释器建 venv（默认当前）")
+    ap.add_argument("--index",
+                    help="指定 pip 源，如 https://mirrors.aliyun.com/pypi/simple"
+                         "（也可用环境变量 PIP_INDEX_URL）")
     a = ap.parse_args()
 
     if a.check:
@@ -131,9 +163,11 @@ def main():
         say("Python 版本过低（当前 %s），需要 3.8+" % sys.version.split()[0])
         return 2
 
+    index = a.index or os.environ.get("PIP_INDEX_URL") or None
+
     if not ensure_venv(a.python or sys.executable):
         return 3
-    if not install_deps():
+    if not install_deps(index):
         return 4
 
     say("[3/4] 确认 Edge（脚本复用系统 Edge，不下载 Chromium 省 300MB）")

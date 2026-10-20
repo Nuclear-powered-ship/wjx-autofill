@@ -24,3 +24,8 @@ url_*.txt
 .idea/
 .DS_Store
 Thumbs.db
+
+# 临时诊断输出
+_*.log
+_*.html
+_whl*/
