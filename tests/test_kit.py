@@ -564,6 +564,10 @@ def k22():
           str({f: fields[f].get("值") for f in fields if fields[f].get("值")}))
     check("K22.5 有专业班级合并栏模板", "专业班级" in fields
           and fields["专业班级"].get("组合") == "{班级}")
+    src_c = open(os.path.join(base, "configure.py"), encoding="utf-8").read()
+    check("K22.7 --reset 不进交互（脚本调用不会卡住）",
+          "if a.reset:" in src_c,
+          "reset 单独使用时必须直接写模板并退出")
     check("K22.6 打码函数不泄露明文",
           C.mask("1109261108").startswith("1")
           and "1109261108" != C.mask("1109261108"))

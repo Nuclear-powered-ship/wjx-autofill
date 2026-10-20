@@ -156,7 +156,10 @@ def main():
         touched = True
 
     if not touched:
-        if not interactive(cfg):
+        if a.reset:
+            # 只清空、不进入问答，避免脚本调用时卡在等输入
+            pass
+        elif not interactive(cfg):
             return 1
 
     save(cfg)
