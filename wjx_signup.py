@@ -27,6 +27,7 @@ import argparse
 import glob
 import json
 import os
+import random
 import re
 import shutil
 import sys
@@ -773,8 +774,46 @@ def submit(page):
     """点击提交。
 
     实测（2026-10-10 该问卷）：按钮是 div#ctlNext.submitbtn.mainBgColor，
-    **不是** a.jqbm。用 JS click 触发原生事件最稳；同时保留坐标点击兜底。
+    **不是** a.jqbm。
+
+    2026-10-26 红丝带晚会事故修正（顺序调换）：
+    原先首选 `el.click()` 这种 JS 合成事件，产生的事件 isTrusted=false、
+    没有鼠标轨迹、填完 28 毫秒就点 —— 网易易盾直接返回
+    「需要安全校验，请重新提交！」，之后人工点也一直卡死。
+    **现在首选 Playwright 真实鼠标（CDP 输入，isTrusted=true）+
+    悬停停顿 + 随机按下延时；JS click 只作最后兜底。**
     """
+    # ---- 首选：真实鼠标点击（最像人，易盾不拦） ----
+    for sel in ("#ctlNext", ".submitbtn", "#jsubmit"):
+        try:
+            loc = page.locator(sel).first
+            if loc.count() == 0 or not loc.is_visible():
+                continue
+            if not re.search(r"提交|交卷", (loc.inner_text() or "")):
+                continue
+            loc.scroll_into_view_if_needed(timeout=3000)
+            box = loc.bounding_box()
+            if box:
+                # 先把鼠标挪到附近再落到按钮中心，制造移动轨迹
+                page.mouse.move(box["x"] + box["width"] * 0.35,
+                                box["y"] + box["height"] * 0.2)
+                page.wait_for_timeout(random.randint(120, 260))
+                page.mouse.move(box["x"] + box["width"] / 2,
+                                box["y"] + box["height"] / 2,
+                                steps=random.randint(6, 14))
+                page.wait_for_timeout(random.randint(90, 220))
+                page.mouse.click(box["x"] + box["width"] / 2,
+                                 box["y"] + box["height"] / 2,
+                                 delay=random.randint(45, 110))
+                return "mouse:trusted(%s)" % sel
+            loc.hover(timeout=3000)
+            page.wait_for_timeout(random.randint(150, 300))
+            loc.click(timeout=5000, delay=random.randint(45, 110))
+            return "locator:trusted(%s)" % sel
+        except Exception as e:
+            log("真实鼠标点击 %s 失败: %s" % (sel, e))
+
+    # ---- 兜底 1：JS click（isTrusted=false，仅在真实鼠标全失败时才用） ----
     js = r"""
     () => {
       const sel = ['#ctlNext', '.submitbtn', 'a.jqbm', 'span.jqbm', '#jsubmit',
@@ -793,7 +832,8 @@ def submit(page):
     try:
         hit = page.evaluate(js)
         if hit:
-            return hit
+            log("!! 真实鼠标失败，退化为 JS click(%s)" % hit)
+            return "js:" + hit
     except Exception:
         pass
 
@@ -872,8 +912,11 @@ def read_url():
         return f.read().strip()
 
 
-def emit_report(result, config, url, mode, extra_notes=None):
-    """生成中文报告，打印 + 写文件。返回报告路径。"""
+def emit_report(result, config, url, mode, extra_notes=None, submit_status=None):
+    """生成中文报告，打印 + 写文件。返回报告路径。
+
+    submit_status 必须传真实的提交结果，否则「未确认提交」会被写成「已提交」。
+    """
     notes = list(extra_notes or [])
     if config.deadline.get("开始"):
         notes.append("报名开始时间：%s%s" % (
@@ -887,7 +930,7 @@ def emit_report(result, config, url, mode, extra_notes=None):
                      "填了之后可以用「3_生成自动任务.bat」实现准点自动提交。")
 
     text = K.render_report(result, config, url, mode,
-                           extra_notes=notes)
+                           extra_notes=notes, submit_status=submit_status)
     print("\n" + text)
     p1, p2 = K.write_report(text, LOGS)
     log("报告已保存: %s" % p2)
@@ -1096,6 +1139,13 @@ def main():
                 verify_filled(page, mapping, config)
                 page.wait_for_timeout(300)
 
+            # ---- 拟人停顿：填完立刻点提交会被易盾判为机器 ----
+            # 2026-10-26 事故：填完到点击只隔 28 毫秒 -> 弹「需要安全校验」。
+            # 真人从最后一个输入框移到提交按钮，至少几百毫秒到一两秒。
+            _think = random.randint(1200, 2400)
+            log("填表完成，停留 %.1f 秒后提交（避易盾判机器）" % (_think / 1000.0))
+            page.wait_for_timeout(_think)
+
             if args.demo:
                 log("--demo：停在提交按钮前，不提交")
                 shot(page, "demo")
@@ -1266,7 +1316,8 @@ def main():
             log("提交时间戳: %s" % now().strftime("%H:%M:%S.%f")[:-3])
             log("最终结果: %s | %s" % (status, detail))
             emit_report(final, config, url, "--submit-now",
-                        extra_notes=["提交结果：%s（%s）" % (status, detail)])
+                        extra_notes=["提交结果：%s（%s）" % (status, detail)],
+                        submit_status=status)
             # 只在「需要你出手」时响：成功、以及你自己关窗（PAGE_CLOSED）都不响
             if status not in ("SUCCESS", "PAGE_CLOSED"):
                 ring()

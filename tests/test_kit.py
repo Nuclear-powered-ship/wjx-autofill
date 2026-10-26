@@ -529,6 +529,18 @@ def k21():
                           "--submit-now", extra_notes=["提交结果：PAGE_CLOSED"])
     check("K21.6 报告能携带 PAGE_CLOSED 备注", "PAGE_CLOSED" in txt)
 
+    # 2026-10-26 红丝带晚会事故：提交没拿到回执，报告绝不能写「已提交」
+    for bad in ("PAGE_CLOSED", "UNKNOWN", "CAPTCHA_TIMEOUT"):
+        txt2 = K.render_report(g, K.Config({}), "https://v.wjx.cn/vm/x.aspx",
+                               "--submit-now", submit_status=bad)
+        check("K21.7 %s 不许写成「已提交」" % bad,
+              "已提交，" not in txt2 and "未确认提交" in txt2,
+              "只有 submit_status == SUCCESS 才允许写「已提交」")
+    ok_txt = K.render_report(g, K.Config({}), "https://v.wjx.cn/vm/x.aspx",
+                             "--submit-now", submit_status="SUCCESS")
+    check("K21.7success SUCCESS 才写「已提交」",
+          "已提交，" in ok_txt and "未确认提交" not in ok_txt)
+
 
 
 # ---------------------------------------------------------------- K22 通用化检查

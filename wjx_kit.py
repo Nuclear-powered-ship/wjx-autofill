@@ -502,8 +502,16 @@ def mask_value(v, show=False):
 
 
 def render_report(result, config, url, mode, ts=None,
-                  extra_notes=None, artifacts=None):
-    """生成中文报告文本。"""
+                  extra_notes=None, artifacts=None, submit_status=None):
+    """生成中文报告文本。
+
+    submit_status：真实提交结果（SUCCESS / UNKNOWN / CAPTCHA_TIMEOUT /
+    PAGE_CLOSED ...）。2026-10-26 红丝带晚会事故的教训：本函数原先只看
+    闸门 result，不看提交状态，于是 15:00 那次「三次 UNKNOWN + 窗口被关」
+    被报告写成「✅ 已提交」，用户差点以为报名成功。
+    **提交模式下，只有 submit_status == SUCCESS 才允许写「已提交」。**
+    None 表示调用方没提供（兼容旧调用），按已提交处理以保持向后兼容。
+    """
     ts = ts or datetime.now()
     L = []
     a = L.append
@@ -531,6 +539,14 @@ def render_report(result, config, url, mode, ts=None,
     elif mode.startswith("--dry-run"):
         a("  ✅ 检查通过，%d 项可自动填写。未提交（检查模式）。" % len(result.filled))
         a("     下一步：双击「submit.bat」正式提交。")
+    elif submit_status is not None and submit_status != "SUCCESS":
+        # 提交动作发过了，但没有拿到成功回执 —— 不能报「已提交」
+        a("  ⚠️ 未确认提交！提交动作已发出，但没有拿到「答卷已提交」回执。")
+        a("     实际结果：%s" % submit_status)
+        a("     （%d 项已填写，表单项本身没问题，是提交环节没走完）"
+          % len(result.filled))
+        a("     下一步：重开问卷看是否显示「您已提交过」；没显示就立刻重报，"
+          "别假设已经报上。")
     else:
         a("  ✅ 已提交，%d 项已填写。" % len(result.filled))
     a("")
@@ -603,6 +619,8 @@ def render_report(result, config, url, mode, ts=None,
     a(BAR)
     if result.ok and mode.startswith("--dry-run"):
         a(" 一句话：检查通过，双击「submit.bat」提交。")
+    elif result.ok and submit_status is not None and submit_status != "SUCCESS":
+        a(" 一句话：没确认提交成功（%s），别当已报名，去页面上看一眼。" % submit_status)
     elif result.ok:
         a(" 一句话：已提交，截图见logs 目录。")
     else:
