@@ -585,13 +585,46 @@ def k22():
           and "1109261108" != C.mask("1109261108"))
 
 
+# ---------------------------------------------------------------- K23 demo 模式
+def k23():
+    print("\nK23 --demo：只填表不提交，把提交权留给人工")
+    import os
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src = open(os.path.join(base, "wjx_signup.py"), encoding="utf-8").read()
+
+    check("K23.1 --demo 不被闸门提前截断",
+          "not want_submit and not args.demo" in src,
+          "want_submit=False 时若不排除 demo，会一栏都不填却报「已填好」")
+    check("K23.2 有 --hold 参数",
+          '"--hold"' in src and 'args.hold' in src,
+          "留窗时长必须可配，否则来不及人工接手")
+    check("K23.3 demo 分支会等到人工提交",
+          "等待人工提交" in src and "检测到你已手动提交" in src
+          or "检测到人工提交" in src,
+          "demo 期间要轮询页面，用户提交成功后截图存证")
+    check("K23.4 demo 分支不调 submit()",
+          "submit(page)" not in src.split("if args.demo:")[1].split("def do_submit")[0],
+          "demo 的整个分支里绝不许出现 submit(page)")
+
+    g = K.decide_gate([K.Item(K.AUTO, "姓名", detail="已填入 丁*")])
+    d = K.render_report(g, K.Config({}), "https://v.wjx.cn/vm/x.aspx",
+                        "--demo", submit_status="NOT_SUBMITTED")
+    check("K23.5 demo 报告不说「已提交」",
+          "已提交，" not in d and "已填好" in d,
+          "demo 只填不交，措辞必须是「已填好…脚本未点提交」")
+    d2 = K.render_report(g, K.Config({}), "https://v.wjx.cn/vm/x.aspx",
+                         "--demo", submit_status="SUCCESS")
+    check("K23.6 demo 下人工提交成功要认",
+          "人工提交成功" in d2)
+
+
 # ---------------------------------------------------------------- run all
 def main():
     print("=" * 60)
     print("wjx_kit 单元测试")
     print("=" * 60)
     for fn in (k1, k2k3, k4, k4b, k5, k6, k7k8, k9k10k11, k12, k13, k14, k15,
-               k16, k17, k18, k19, k20, k21, k22):
+               k16, k17, k18, k19, k20, k21, k22, k23):
         run(fn.__name__.upper(), fn)
     print("\n" + "=" * 60)
     print("通过 %d 项，失败 %d 项" % (len(PASSED), len(FAILED)))

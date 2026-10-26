@@ -947,7 +947,9 @@ def main():
                     help="立刻填表并提交")
     ap.add_argument("--at", help="守时提交，格式 'YYYY-MM-DD HH:MM:SS' 或 'HH:MM:SS'")
     ap.add_argument("--demo", action="store_true",
-                    help="填到提交按钮前就停，不提交")
+                    help="只填表不点提交：填好后响铃 + 保留窗口等你手动提交")
+    ap.add_argument("--hold", type=int, default=300,
+                    help="--demo 模式下填好表后保留窗口的秒数（默认 300）")
     ap.add_argument("--force-now", action="store_true",
                     help="配合 --at：目标时间已过也强行立即提交")
     ap.add_argument("--wait-open", action="store_true",
@@ -1090,7 +1092,10 @@ def main():
             log("题目结构已存 -> fieldmap.json")
 
             # ========== 闸门 1：检查模式与闸门拦截 ==========
-            if not want_submit or not result.ok:
+            # --demo 例外：它 want_submit=False，但**必须继续往下填表**，
+            # 然后停在提交按钮前交给人工。2026-10-26 验证时发现它被这里
+            # 提前截断，结果一栏都没填，报告却写「表已填好」，严重误导。
+            if (not want_submit and not args.demo) or not result.ok:
                 p = dump_unknown(result.items)
                 shot(page, "check_result")
                 ring() if result.asks else None
@@ -1098,8 +1103,8 @@ def main():
                             extra_notes=["未自动填写清单：%s" % p])
                 log("未提交。原因：%s" % (result.reason_summary()
                                        or "当前为检查模式"))
-                if want_submit and result.asks:
-                    # 提交模式下被闸门拦下 -> 把窗口留给人工补填，
+                if (want_submit or args.demo) and result.asks:
+                    # 提交模式 / --demo 被闸门拦下 -> 把窗口留给人工补填，
                     # 用户补完可以自己点提交（脚本不代劳，避免残缺答卷）
                     log("有 %d 道题需要人工处理，浏览器保留 %d 秒。"
                         % (len(result.asks), CAPTCHA_WAIT))
@@ -1139,18 +1144,40 @@ def main():
                 verify_filled(page, mapping, config)
                 page.wait_for_timeout(300)
 
-            # ---- 拟人停顿：填完立刻点提交会被易盾判为机器 ----
-            # 2026-10-26 事故：填完到点击只隔 28 毫秒 -> 弹「需要安全校验」。
-            # 真人从最后一个输入框移到提交按钮，至少几百毫秒到一两秒。
-            _think = random.randint(1200, 2400)
-            log("填表完成，停留 %.1f 秒后提交（避易盾判机器）" % (_think / 1000.0))
-            page.wait_for_timeout(_think)
-
             if args.demo:
-                log("--demo：停在提交按钮前，不提交")
-                shot(page, "demo")
-                emit_report(result, config, url, mode)
-                page.wait_for_timeout(3000)
+                # 2026-10-26 红丝带晚会事故后的新取向：脚本只负责「把表填对」，
+                # 提交按钮留给真人点。原因是脚本那次自动点击（28ms + JS 合成）
+                # 会把网易易盾的风控档位推高，导致紧接着的人工点击也过不了。
+                log("--demo：已填好 %d 项，不点提交（提交权留给人工）" % len(done))
+                shot(page, "filled_waiting")
+                log("浏览器保留 %d 秒，请你手动点「提交」并过易盾；"
+                    "脚本检测到成功会自动截图存证。" % args.hold)
+                ring()
+                hold_status, hold_detail = "NOT_SUBMITTED", "已填好，等待人工提交"
+                for i in range(1, args.hold + 1):
+                    try:
+                        page.wait_for_timeout(1000)
+                    except Exception as _e:
+                        if is_page_closed(_e):
+                            hold_status = "PAGE_CLOSED"
+                            hold_detail = "等待人工提交期间窗口被关闭"
+                            log("!! 等待期间窗口被关闭")
+                            break
+                        raise
+                    s, d = judge(page)
+                    if s in ("SUCCESS", "FULL"):
+                        hold_status = s
+                        hold_detail = "检测到人工提交：%s" % d
+                        log("检测到人工提交成功：%s" % d)
+                        shot(page, "SUCCESS")
+                        break
+                    if i % 60 == 0:
+                        log("等待人工提交… %d/%d 秒" % (i, args.hold))
+                emit_report(result, config, url, mode,
+                            extra_notes=["人工提交结果：%s（%s）"
+                                         % (hold_status, hold_detail)],
+                            submit_status=hold_status)
+                page.wait_for_timeout(2000)
                 return 0
 
             # ---- 守时 ----
@@ -1160,6 +1187,14 @@ def main():
                     remain = (target - now()).total_seconds()
                     page.wait_for_timeout(min(int(remain * 1000), 5000))
                 log("到达目标时间")
+
+            # ---- 拟人停顿：填完立刻点提交会被易盾判为机器 ----
+            # 2026-10-26 事故：填完到点击只隔 28 毫秒 -> 弹「需要安全校验」。
+            # 真人从最后一个输入框移到提交按钮，至少几百毫秒到一两秒。
+            # 只在真要提交时才停；--demo 已在上面 return，不走这里。
+            _think = random.randint(1200, 2400)
+            log("填表完成，停留 %.1f 秒后提交（避易盾判机器）" % (_think / 1000.0))
+            page.wait_for_timeout(_think)
 
             def do_submit():
                 """闸门 2：提交前再确认一次映射非空。"""

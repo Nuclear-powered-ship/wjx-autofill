@@ -539,6 +539,22 @@ def render_report(result, config, url, mode, ts=None,
     elif mode.startswith("--dry-run"):
         a("  ✅ 检查通过，%d 项可自动填写。未提交（检查模式）。" % len(result.filled))
         a("     下一步：双击「submit.bat」正式提交。")
+    elif mode.startswith("--demo"):
+        # --demo 的语义：填对表就交棒给人工，提交按钮不由脚本按
+        if submit_status == "SUCCESS":
+            a("  ✅ 人工提交成功，%d 项已填写。" % len(result.filled))
+            a("     脚本只负责填表，提交是你自己点的。")
+        elif submit_status in (None, "NOT_SUBMITTED"):
+            a("  ⏸ 已填好 %d 项，脚本未点提交（按配置把提交权留给人工）。"
+              % len(result.filled))
+            a("     下一步：去浏览器窗口点「提交」，过易盾后脚本会自动记录结果。")
+        elif submit_status == "PAGE_CLOSED":
+            a("  ⚠️ 等待人工提交期间窗口被关闭，未确认提交。")
+            a("     实际结果：PAGE_CLOSED")
+            a("     下一步：重开问卷看是否显示「您已提交过」；没显示就立刻重报。")
+        else:
+            a("  ⚠️ 未确认提交，人工提交没有拿到回执（%s）。" % submit_status)
+            a("     下一步：重开问卷看是否显示「您已提交过」；没显示就立刻重报。")
     elif submit_status is not None and submit_status != "SUCCESS":
         # 提交动作发过了，但没有拿到成功回执 —— 不能报「已提交」
         a("  ⚠️ 未确认提交！提交动作已发出，但没有拿到「答卷已提交」回执。")
@@ -619,6 +635,10 @@ def render_report(result, config, url, mode, ts=None,
     a(BAR)
     if result.ok and mode.startswith("--dry-run"):
         a(" 一句话：检查通过，双击「submit.bat」提交。")
+    elif result.ok and mode.startswith("--demo") and submit_status == "SUCCESS":
+        a(" 一句话：人工提交成功已确认，截图见logs 目录。")
+    elif result.ok and mode.startswith("--demo"):
+        a(" 一句话：表已填好，去窗口点提交；脚本没代点。")
     elif result.ok and submit_status is not None and submit_status != "SUCCESS":
         a(" 一句话：没确认提交成功（%s），别当已报名，去页面上看一眼。" % submit_status)
     elif result.ok:
